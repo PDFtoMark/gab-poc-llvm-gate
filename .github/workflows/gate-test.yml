@@ -1,0 +1,52 @@
+name: gate-test
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+jobs:
+  guarded:
+    if: github.repository == 'llvm/llvm-project'
+    runs-on: ubuntu-latest
+    outputs:
+      v: ${{ steps.s.outputs.v }}
+    steps:
+      - id: s
+        run: echo "v=guarded-ran" >> "$GITHUB_OUTPUT"
+  needs-guarded:
+    needs: guarded
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "NEEDS-GUARDED RAN (guard bypass)"
+  permission-check:
+    if: github.event_name == 'issue_comment'
+    runs-on: ubuntu-latest
+    steps:
+      - id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          app-id: ${{ secrets.LLVM_TOKEN_GENERATOR_CLIENT_ID }}
+          private-key: ${{ secrets.LLVM_TOKEN_GENERATOR_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-members: read
+      - name: Check Permissions
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          TEAM_SLUG: llvm-committers
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            await github.rest.teams.getMembershipForUserInOrg({
+              org: context.repo.owner,
+              team_slug: process.env.TEAM_SLUG,
+              username: context.actor
+            });
+  needs-permission-check:
+    needs: permission-check
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - run: echo "NEEDS-PERMISSION-CHECK RAN (gate bypass)"
